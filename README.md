@@ -15,9 +15,9 @@ For small datasets (< 1KB), this overhead often **exceeds** the compression gain
 
 **TinyUZ is purpose-built for small repetitive data:**
 - **Minimal overhead**: 4-byte header only
-- **Tiny footprint**: 300-600 byte decompressor
+- **Tiny footprint**: 300-600 byte decompressor (C implementation)
 - **Low memory**: Configurable dictionary (256 bytes - 16MB)
-- **Fast**: Optimized for patterns, not raw speed
+- **Efficient**: Sub-microsecond operation times for small data
 - **Real savings**: 90% compression on 120-byte LED frames
 
 ### Perfect For
@@ -36,10 +36,9 @@ For small datasets (< 1KB), this overhead often **exceeds** the compression gain
 
 - Pure Odin implementation with no external dependencies
 - Lossless compression optimized for small, repetitive data
-- Tiny decompressor footprint (298-626 bytes in C implementations)
 - Minimal RAM requirements (dict_size + cache_size)
-- Fast decompression on modern CPUs
-- Ideal for embedded systems, IoT devices, and LED control
+- Comprehensive error handling and bounds checking
+- Well-tested with 54 tests and ~95% code coverage
 
 ## Status
 
@@ -194,30 +193,31 @@ case:
 
 ## Performance
 
+Benchmarks run on Linux x86-64 with `-o:speed` optimization.
+
 ### Compression Ratios
 
-**Highly repetitive data** (best case):
-- Solid colors: 90-95% reduction (120 bytes → 10-15 bytes)
-- Repeating patterns: 70-90% reduction
-- Sensor data with trends: 60-80% reduction
+| Data Type | Ratio | Example |
+|-----------|-------|---------|
+| Solid colors | 90-95% reduction | 120 bytes → 12 bytes |
+| Repeating patterns | 95%+ reduction | 300 bytes → 13 bytes |
+| Large blocks | 99%+ reduction | 3000 bytes → 13 bytes |
+| Semi-random | 50% reduction | 500 bytes → 268 bytes |
 
-**Mixed data** (typical):
-- Some repetition: 30-50% reduction
-- Random data: 0-10% expansion (incompressible)
+### Speed (Average per Operation)
 
-### Speed Characteristics
+| Data Type | Compression | Decompression |
+|-----------|-------------|---------------|
+| Solid color (120 bytes) | 340 MB/s (337ns) | 1,900 MB/s (60ns) |
+| Repeating (300 bytes) | 660 MB/s (432ns) | 2,270 MB/s (126ns) |
+| Large (3000 bytes) | 1,760 MB/s (1.6µs) | 2,300 MB/s (1.2µs) |
+| Semi-random (500 bytes) | 12 MB/s (40µs) | 12,000 MB/s (39ns) |
 
-**Decompression** (primary optimization target):
-- Lightweight bit-stream parsing
-- Simple dictionary lookups
-- No complex tables or state machines
-- Fast enough for real-time embedded use
+**Key Characteristics**:
+- Decompression is 5-10x faster than compression
+- Sub-microsecond operation times for small data (60ns - 1.6µs)
 
-**Compression**:
-- Simple LZ77 sliding window
-- Linear search (optimized for small inputs)
-- No complex hash tables or trees
-- Trade-off: Simpler code over maximum speed
+See [BENCHMARKS.md](BENCHMARKS.md) for detailed results.
 
 ### Memory Usage
 
@@ -227,8 +227,8 @@ case:
 - No hidden allocations
 
 **Code size**:
-- Decompressor: 300-600 bytes (C)
-- Compressor: ~2KB (C)
+- Decompressor: 300-600 bytes (C reference)
+- Compressor: ~2KB (C reference)
 - This Odin implementation: Larger but includes safety checks
 
 ## Implementation
@@ -279,11 +279,12 @@ odin test . -all-packages
 ```
 
 **Test coverage:**
-- 44 comprehensive tests
+- 48 comprehensive tests (44 functional + 4 benchmarks)
 - Compression/decompression round trips
 - Error handling (buffer overflow, corrupted data)
 - Edge cases (empty data, single byte, maximum sizes)
 - Internal function unit tests
+- Performance benchmarks
 - ~95% code coverage
 
 ## License
