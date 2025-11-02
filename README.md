@@ -1,6 +1,6 @@
 # tinyuz
 
-Native Odin implementation of the TinyUZ compression algorithm, optimized for small repetitive datasets like RGB LED frames, sensor data, and embedded systems.
+Native Zig implementation of the TinyUZ compression algorithm, optimized for small repetitive datasets like RGB LED frames, sensor data, and embedded systems.
 
 Based on the TinyUZ algorithm by HouSisong.
 
@@ -34,93 +34,128 @@ For small datasets (< 1KB), this overhead often **exceeds** the compression gain
 
 ## Features
 
-- Pure Odin implementation with no external dependencies
+- Pure Zig implementation with no external dependencies
 - Lossless compression optimized for small, repetitive data
 - Minimal RAM requirements (dict_size + cache_size)
 - Comprehensive error handling and bounds checking
-- Well-tested with 54 tests and ~95% code coverage
-
-## Status
-
-✅ **Compression**: Fully implemented with configurable dictionary size
-✅ **Decompression**: Fully implemented and tested
+- Well-tested with 30+ tests
 
 ## Installation
 
-Copy the `tinyuz` directory into your project:
+### Using Zig's Package Manager
 
+Add to your `build.zig.zon`:
+```zig
+.dependencies = .{
+    .tinyuz = .{
+        .path = "path/to/tinyuz",
+    },
+},
+```
+
+Then in your `build.zig`:
+```zig
+const tinyuz = b.dependency("tinyuz", .{
+    .target = target,
+    .optimize = optimize,
+});
+
+exe.root_module.addImport("tinyuz", tinyuz.module("tinyuz"));
+```
+
+### Manual Installation
+
+Copy the Zig files into your project:
 ```
 your_project/
-  main.odin
+  src/
+    main.zig
   tinyuz/
-    tinyuz.odin       # Public API and constants
-    compress.odin     # Compression implementation
-    decompress.odin   # Decompression implementation
-    utilities.odin    # Shared utilities
-```
-
-Then import it:
-
-```odin
-import "tinyuz"
+    tinyuz.zig       # Public API and constants
+    compress.zig     # Compression implementation
+    decompress.zig   # Decompression implementation
+    utilities.zig    # Shared utilities
 ```
 
 ## Quick Start
 
-```odin
-import "tinyuz"
+```zig
+const std = @import("std");
+const tinyuz = @import("tinyuz");
 
-// Compress
-input := []byte{1, 2, 3, 1, 2, 3}
-compressed := make([]byte, len(input) * 2)
-size, result := tinyuz.compress_mem(input, compressed)
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-if result == .OK {
+    // Compress
+    const input = [_]u8{ 1, 2, 3, 1, 2, 3 };
+    var compressed: [128]u8 = undefined;
+    const compressed_size = try tinyuz.compressMem(&input, &compressed, 65535, allocator);
+
     // Decompress
-    output := make([]byte, len(input))
-    dec_size, dec_result := tinyuz.decompress_mem(compressed[:size], output)
+    var output: [6]u8 = undefined;
+    const decompressed_size = try tinyuz.decompressMem(compressed[0..compressed_size], &output);
 
-    if dec_result == .STREAM_END {
-        // Success! Data in output[:dec_size]
-    }
+    // Verify
+    std.debug.assert(decompressed_size == input.len);
+    std.debug.assert(std.mem.eql(u8, &output, &input));
 }
+```
+
+Run the included example:
+```bash
+zig build run
+```
+
+Or run directly:
+```bash
+zig run example.zig
 ```
 
 ## API Reference
 
-### compress_mem
-```odin
-compress_mem :: proc(
-    in_data: []byte,           // Data to compress
-    out_code: []byte,          // Output buffer
-    dict_size: uint = 65535,   // Dictionary size (optional)
-) -> (compressed_size: int, result: Result)
+### compressMem
+```zig
+pub fn compressMem(
+    in_data: []const u8,           // Data to compress
+    out_code: []u8,                // Output buffer
+    dict_size: u32,                // Dictionary size
+    allocator: std.mem.Allocator,  // Allocator for temporary buffers
+) !usize
 ```
 
-Compress data using TinyUZ algorithm. Returns compressed size and result code.
-- `result == .OK` indicates success
-- `result == .OUT_SIZE_OR_CODE_ERROR` means output buffer too small
+Compress data using TinyUZ algorithm. Returns number of compressed bytes.
 
-### decompress_mem
-```odin
-decompress_mem :: proc(
-    in_code: []byte,           // Compressed data
-    out_data: []byte,          // Output buffer
-) -> (decompressed_size: int, result: Result)
+**Errors:**
+- `error.OutSizeOrCodeError` - output buffer too small
+
+### decompressMem
+```zig
+pub fn decompressMem(
+    in_code: []const u8,    // Compressed data
+    out_data: []u8,         // Output buffer
+) !usize
 ```
 
-Decompress TinyUZ-compressed data. Returns decompressed size and result code.
-- `result == .STREAM_END` indicates successful decompression
-- Other values indicate errors (corrupted data, buffer too small, etc.)
+Decompress TinyUZ-compressed data. Returns number of decompressed bytes.
 
-### read_dict_size
-```odin
-read_dict_size :: proc(
-    in_code: []byte,           // Compressed data
-) -> (dict_size: uint, ok: bool)
+**Errors:**
+- `error.OutSizeOrCodeError` - output buffer too small
+- `error.ReadCodeError` - corrupted compressed data
+- `error.ReadDictSizeError` - invalid header
+- `error.DictPosError` - invalid dictionary position
+- `error.CtrlTypeUnknownError` - unknown control code
+
+### readDictSize
+```zig
+pub fn readDictSize(in_code: []const u8) !u32
 ```
 
 Read dictionary size from compressed data header without decompressing.
+
+**Errors:**
+- `error.ReadDictSizeError` - invalid header
 
 ## Format
 
@@ -139,118 +174,105 @@ The compressed data uses:
 
 ### RGB LED Compression (Real-World Use Case)
 
-TinyUZ excels at compressing repetitive small datasets like RGB LED frames:
+```zig
+const std = @import("std");
+const tinyuz = @import("tinyuz");
 
-```odin
-import "tinyuz"
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-// 40 RGB LEDs (120 bytes) - solid red color
-led_data := make([]byte, 40 * 3)
-for i := 0; i < 40; i += 1 {
-    led_data[i*3 + 0] = 0xFF  // R
-    led_data[i*3 + 1] = 0x00  // G
-    led_data[i*3 + 2] = 0x00  // B
+    // 40 RGB LEDs (120 bytes) - solid red color
+    var led_data: [120]u8 = undefined;
+    for (0..40) |i| {
+        led_data[i * 3 + 0] = 0xFF; // R
+        led_data[i * 3 + 1] = 0x00; // G
+        led_data[i * 3 + 2] = 0x00; // B
+    }
+
+    var compressed: [256]u8 = undefined;
+    const size = try tinyuz.compressMem(&led_data, &compressed, 65535, allocator);
+
+    std.debug.print("Compressed: 120 bytes → {} bytes\n", .{size});
+    // Typically: 120 bytes → ~12 bytes (90% reduction!)
 }
-
-compressed := make([]byte, 256)
-size, _ := tinyuz.compress_mem(led_data, compressed)
-// Typically: 120 bytes → ~12 bytes (90% reduction!)
 ```
-
-**Use cases:**
-- Wireless LED controllers (reduce RF bandwidth)
-- LED animation storage (save flash memory)
-- IoT sensor data with patterns
-- Embedded telemetry compression
 
 ### Custom Dictionary Size
 
-```odin
+```zig
 // Small dictionary for memory-constrained devices
-input := []byte{1, 2, 3, 4, 5}
-compressed := make([]byte, 64)
+const input = [_]u8{ 1, 2, 3, 4, 5 };
+var compressed: [64]u8 = undefined;
 
-size, result := tinyuz.compress_mem(input, compressed, 256)  // 256-byte dict
+const size = try tinyuz.compressMem(&input, &compressed, 256, allocator); // 256-byte dict
 ```
 
 ### Error Handling
 
-```odin
-size, result := tinyuz.compress_mem(input, compressed)
-
-switch result {
-case .OK:
-    // Compression succeeded
-    data := compressed[:size]
-
-case .OUT_SIZE_OR_CODE_ERROR:
-    // Output buffer too small
-
-case:
-    // Other error
-}
+```zig
+const size = tinyuz.compressMem(input, &compressed, 65535, allocator) catch |err| {
+    switch (err) {
+        error.OutSizeOrCodeError => {
+            // Output buffer too small
+            std.debug.print("Need larger output buffer\n", .{});
+        },
+        else => return err,
+    }
+};
 ```
+
+## Testing
+
+Run the test suite:
+
+```bash
+zig build test
+```
+
+**Test coverage:**
+- 30+ comprehensive tests
+- Compression/decompression round trips
+- Error handling (buffer overflow, corrupted data)
+- Edge cases (empty data, single byte, maximum sizes)
+- Performance verification
 
 ## Performance
 
-Benchmarks run on Linux x86-64 with `-o:speed` optimization.
+Example compression ratios from `example.zig`:
 
-### Compression Ratios
+| Data Type | Input Size | Compressed Size | Ratio |
+|-----------|-----------|-----------------|-------|
+| Repeating pattern (1,2,3) | 9 bytes | 11 bytes | 122% (slight expansion) |
+| Solid RGB color (40 LEDs) | 120 bytes | 12 bytes | 10% (90% reduction) |
+| Uniform block (0xAA) | 1000 bytes | 10 bytes | 1% (99% reduction) |
 
-| Data Type | Ratio | Example |
-|-----------|-------|---------|
-| Solid colors | 90-95% reduction | 120 bytes → 12 bytes |
-| Repeating patterns | 95%+ reduction | 300 bytes → 13 bytes |
-| Large blocks | 99%+ reduction | 3000 bytes → 13 bytes |
-| Semi-random | 50% reduction | 500 bytes → 268 bytes |
-
-### Speed (Average per Operation)
-
-| Data Type | Compression | Decompression |
-|-----------|-------------|---------------|
-| Solid color (120 bytes) | 340 MB/s (337ns) | 1,900 MB/s (60ns) |
-| Repeating (300 bytes) | 660 MB/s (432ns) | 2,270 MB/s (126ns) |
-| Large (3000 bytes) | 1,760 MB/s (1.6µs) | 2,300 MB/s (1.2µs) |
-| Semi-random (500 bytes) | 12 MB/s (40µs) | 12,000 MB/s (39ns) |
-
-**Key Characteristics**:
-- Decompression is 5-10x faster than compression
-- Sub-microsecond operation times for small data (60ns - 1.6µs)
-
-See [BENCHMARKS.md](BENCHMARKS.md) for detailed results.
-
-### Memory Usage
-
-**Runtime**:
-- Decompressor: ~dict_size bytes RAM
-- Compressor: ~dict_size + output buffer
-- No hidden allocations
-
-**Code size**:
-- Decompressor: 300-600 bytes (C reference)
-- Compressor: ~2KB (C reference)
-- This Odin implementation: Larger but includes safety checks
+**Key characteristics:**
+- Excellent compression on repetitive data
+- Small expansion on incompressible data
+- Minimal overhead (4-byte header)
+- Fast compression/decompression
 
 ## Implementation
 
 ### Code Structure
 
-This is a clean-room Odin implementation with modern design:
+This is a clean-room Zig implementation with modern design:
 
-- **tinyuz.odin** - Public API, constants, and type definitions
-- **compress.odin** - Compression implementation (LZ77 match finding, encoding)
-- **decompress.odin** - Decompression implementation (stream parsing, decoding)
-- **utilities.odin** - Shared helper functions (endian conversion, bounds checking)
+- **tinyuz.zig** - Public API, constants, and type definitions
+- **compress.zig** - Compression implementation (LZ77 match finding, encoding)
+- **decompress.zig** - Decompression implementation (stream parsing, decoding)
+- **utilities.zig** - Shared helper functions (endian conversion, bounds checking)
 
 ### Implementation Features
 
-- Native Odin with no external dependencies
-- Idiomatic Odin code (slices, enums, defer)
+- Native Zig with no external dependencies
+- Idiomatic Zig code (slices, error unions, comptime)
 - Comprehensive error handling
 - Memory safety with bounds checking
-- Well-tested (44 tests, ~95% coverage)
+- Well-tested (30+ tests)
 - Modular design with focused functions
-- Helper utilities for common operations
 
 ### Algorithm Design
 
@@ -270,23 +292,6 @@ This is a clean-room Odin implementation with modern design:
 - Dictionary matches replace repetition with short references
 - Small dictionary (256-1024 bytes) sufficient for local patterns
 
-## Testing
-
-Run the test suite:
-
-```bash
-odin test . -all-packages
-```
-
-**Test coverage:**
-- 48 comprehensive tests (44 functional + 4 benchmarks)
-- Compression/decompression round trips
-- Error handling (buffer overflow, corrupted data)
-- Edge cases (empty data, single byte, maximum sizes)
-- Internal function unit tests
-- Performance benchmarks
-- ~95% code coverage
-
 ## License
 
 MIT License
@@ -297,5 +302,5 @@ This implementation is based on the TinyUZ algorithm:
 
 ## References
 
-- Odin Programming Language: https://odin-lang.org
+- Zig Programming Language: https://ziglang.org
 - TinyUZ Algorithm: https://github.com/sisong/tinyuz
