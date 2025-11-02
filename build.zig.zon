@@ -1,0 +1,21 @@
+.{
+    .name = .tinyuz,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.13.0",
+    .fingerprint = 0xd7123d36a5b058fe,
+
+    .dependencies = .{},
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "tinyuz.zig",
+        "compress.zig",
+        "decompress.zig",
+        "utilities.zig",
+        "example.zig",
+        "test.zig",
+        "LICENSE",
+        "README.md",
+    },
+}
