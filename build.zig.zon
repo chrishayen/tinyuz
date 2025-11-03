@@ -1,6 +1,6 @@
 .{
     .name = .tinyuz,
-    .version = "0.1.0",
+    .version = "0.1.1",
     .minimum_zig_version = "0.13.0",
     .fingerprint = 0xd7123d36a5b058fe,
 
