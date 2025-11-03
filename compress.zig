@@ -168,7 +168,9 @@ fn outDict(encoder: *TuzEncoder, match_len: usize, dict_pos: usize) !void {
 
     var len_val = match_len - tinyuz.TUZ_K_MIN_DICT_MATCH_LEN;
     if (!is_saved_same_pos and saved_dict_pos > tinyuz.TUZ_K_BIG_POS_FOR_LEN) {
-        len_val -= 1;
+        if (len_val > 0) {
+            len_val -= 1;
+        }
     }
 
     try outLen(encoder, len_val, DICT_LEN_PACK_BIT);
